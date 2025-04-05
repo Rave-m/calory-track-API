@@ -1,39 +1,34 @@
-import requests
-from bs4 import BeautifulSoup
-from flask_cors import CORS
-from flask import Flask, request, jsonify
+import numpy as np
+import cv2
 
-from helper.food import food_list
-# from helper.functions import 
-from helper.scrap import scrape_nutrition_data, scrape_portion_links, scrape_portion_nutrition
-
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-@app.route("/", methods=['GET'])
-def index():
-    return "Hayo Cari Apaaa?"
-
-@app.route("/scan_food", methods=["POST"])
-def scan_food():
+# klasifikasi gambar
+def classify_image(image_path, model):
     """
-    Parameters:
-        - image : image url
+    Mengklasifikasikan gambar menggunakan model yang diberikan.
+
+    Args:
+        image_path (str): Path ke gambar yang akan diklasifikasikan.
+        model (keras.Model): Model yang digunakan untuk klasifikasi.
 
     Returns:
-        - Detected objects in the image
-        - Nutrition data of the detected objects
+        str: Kelas yang diprediksi oleh model.
     """
+    # Load dan preprocess gambar
+    img = load_and_preprocess_image(image_path)
     
-    # data = scrape_nutrition_data()
-    return jsonify({"nutrition": 'hallo'})
+    # Melakukan prediksi
+    predictions = model.predict(img)
+    
+    # Mendapatkan kelas dengan probabilitas tertinggi
+    predicted_class = np.argmax(predictions, axis=1)[0]
+    
+    return predicted_class
 
-# @app.route("/food_nutrition", methods=["POST"])
-def food_portion():
+def food_clasification():
     """
     Parameters:
         - features : [food_name, volume (optional)]
-i
+
     Returns:
         - food name
         - [Calories, Carbohydrates, Fat, Proteins]
@@ -48,11 +43,11 @@ i
     if not food_name:
         return jsonify({"error": "'food_name' must be provided."}), 400
     
-    # if volume is not None:
-    #     volume_convert = convert_weight_to_grams(volume)
+    if volume is not None:
+        volume_convert = convert_weight_to_grams(volume)
 
     try:
-        data = scrape_nutrition_data(food_name)
+        proteins, calories, carbohydrates, fat, sugar = fetch_nutritions(food_name)
 
         # Convert values to floats to avoid type mismatch
         proteins = safe_convert(proteins, "g")
@@ -97,6 +92,3 @@ i
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
