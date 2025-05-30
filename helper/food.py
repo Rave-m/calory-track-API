@@ -1,2 +1,1 @@
-# dataset : https://data.mendeley.com/datasets/vtjd68bmwt/1
-food_list = ['bakso', 'bebek_betutu', 'gado_gado', 'gudeg', 'nasi_goreng', 'pempek', 'rawon', 'rendang', 'sate', 'soto']
+food_list = ['Bakso Sapi', 'Bebek Betutu', 'Gado-Gado', 'Gudeg', 'Nasi Goreng', 'Pempek', 'Rawon', 'Rendang', 'Sate Ayam', 'Soto Ayam']

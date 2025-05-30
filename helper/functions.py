@@ -1,94 +1,85 @@
+import requests
 import numpy as np
-import cv2
+from PIL import Image
+import io
+import os
+from fastapi import HTTPException
 
-# klasifikasi gambar
-def classify_image(image_path, model):
-    """
-    Mengklasifikasikan gambar menggunakan model yang diberikan.
-
-    Args:
-        image_path (str): Path ke gambar yang akan diklasifikasikan.
-        model (keras.Model): Model yang digunakan untuk klasifikasi.
-
-    Returns:
-        str: Kelas yang diprediksi oleh model.
-    """
-    # Load dan preprocess gambar
-    img = load_and_preprocess_image(image_path)
-    
-    # Melakukan prediksi
-    predictions = model.predict(img)
-    
-    # Mendapatkan kelas dengan probabilitas tertinggi
-    predicted_class = np.argmax(predictions, axis=1)[0]
-    
-    return predicted_class
-
-def food_clasification():
+# conver to gram
+def convert_weight_to_grams(weight):
     """
     Parameters:
-        - features : [food_name, volume (optional)]
-
+        - weight (str): The weight string, e.g., "500mg", "1.2kg", "3t".
+        
     Returns:
-        - food name
-        - [Calories, Carbohydrates, Fat, Proteins]
-        - alert (note recommendation for diabetes or not diabetes)
-        - volume (gram)
+        - float: The converted weight in grams.
     """
-    
-    data = request.json
-    food_name = data.get('name')
-    volume = data.get('volume')
-
-    if not food_name:
-        return jsonify({"error": "'food_name' must be provided."}), 400
-    
-    if volume is not None:
-        volume_convert = convert_weight_to_grams(volume)
-
     try:
-        proteins, calories, carbohydrates, fat, sugar = fetch_nutritions(food_name)
+        # Normalize input (lowercase and strip spaces)
+        weight = weight.lower().strip()
 
-        # Convert values to floats to avoid type mismatch
-        proteins = safe_convert(proteins, "g")
-        calories = safe_convert(calories, "kcal")
-        carbohydrates = safe_convert(carbohydrates, "g")
-        fat = safe_convert(fat, "g")
-        sugar = safe_convert(sugar, "g")
+        if "µg" in weight or "ug" in weight:
+            value = float(weight.replace("µg", "").replace("ug", "").strip())
+            return value / 1_000_000
+
+        elif "mg" in weight:
+            value = float(weight.replace("mg", "").strip())
+            return value / 1000
         
-        # Ensure volume is a valid number
-        volume_convert = float(volume_convert / 100) if volume is not None else 1
+        elif "kg" in weight:
+            value = float(weight.replace("kg", "").strip())
+            return value * 1000
+        elif "g" in weight:
+            value = float(weight.replace("g", "").strip())
+            return value
 
-        proteins *= volume_convert
-        calories *= volume_convert
-        carbohydrates *= volume_convert
-        fat *= volume_convert
-        sugar *= volume_convert
+        elif "t" in weight:
+            value = float(weight.replace("t", "").strip())
+            return value * 1_000_000
 
-        nutrition_info = {
-            "proteins": "{:.2f} g".format(proteins),
-            "calories": "{:.2f} kcal".format(calories),
-            "carbohydrates": "{:.2f} g".format(carbohydrates),
-            "fat": "{:.2f} g".format(fat),
-            "sugar": "{:.2f} g".format(sugar)
-        }
-
-        if carbohydrates == 0 and calories == 0 and proteins == 0 and fat == 0 and sugar == 0:
-            alert = "Food not found"
-        elif (carbohydrates < max_carbs and 
-            calories < max_calories and 
-            proteins < max_protein and 
-            fat < max_fat):
-            alert = "Suitable for diabetes"
         else:
-            alert = "Not recommended for diabetes"
-        
-        return jsonify({
-            "food_name": food_name,
-            "nutrition_info": nutrition_info,
-            "alert": alert,
-            "volume": "100 g" if volume is None else f"{volume}"
-        })
-    
+            raise ValueError("Unit not recognized. Please use mg, g, kg, or t.")
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        raise ValueError(f"Invalid weight format: {e}")
+    
+def safe_convert(value, unit):
+    try:
+        return float(value.replace(unit, "").strip().replace(",", "."))
+    except (ValueError, AttributeError):
+        return 0.0  
+
+def get_image_from_url(url):
+    """
+    Download image from URL and return as bytes
+    """
+    try:
+        response = requests.get(url, stream=True, timeout=10)
+        response.raise_for_status()
+        if not response.headers.get("Content-Type", "").startswith("image/"):
+            raise ValueError("URL is not an image.")
+        return response.content
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Image download failed: {str(e)}")
+    
+def get_image_from_path(path):
+    """
+    Read image from local file path
+    """
+    try:
+        if not os.path.exists(path):
+            raise ValueError("File not found.")
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reading local image failed: {str(e)}")
+    
+# Function to preprocess image for the model
+def preprocess_image(image_bytes, target_size=(224, 224)):
+    """
+    Preprocess image bytes for the model
+    """
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    image = image.resize(target_size)
+    array = np.array(image) / 255.0
+    return np.expand_dims(array, axis=0)
