@@ -1,1 +1,1 @@
-food_list = ['Bakso Sapi', 'Bebek Betutu', 'Gado-Gado', 'Gudeg', 'Nasi Goreng', 'Pempek', 'Rawon', 'Rendang', 'Sate Ayam', 'Soto Ayam']
+food_list = ['Bakso Daging Sapi', 'Bebek Betutu', 'Gado-Gado', 'Gudeg', 'Nasi Goreng', 'Pempek', 'Rawon', 'Rendang', 'Sate Ayam', 'Soto Ayam']
