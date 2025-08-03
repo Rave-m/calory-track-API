@@ -51,8 +51,8 @@ class FoodNutritionResponse(BaseModel):
     volume_list: list
 
 class ScanFoodRequest(BaseModel):
-    image_url: str | None = None
-    image_path: str | None = None
+    image_url: Optional[str] = None
+    image_path: Optional[str] = None
 
 @app.get("/")
 def index():
