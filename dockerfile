@@ -6,7 +6,8 @@ WORKDIR /app
 
 # Copy requirements dan install dependencies dalam satu layer
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy semua file project
 COPY . .
