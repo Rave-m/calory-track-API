@@ -13,5 +13,5 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Expose port dan set command untuk menjalankan aplikasi
-EXPOSE 9090
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9090"]
+EXPOSE 9099
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9099"]
