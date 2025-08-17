@@ -1,5 +1,5 @@
 import tensorflow as tf
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -50,23 +50,19 @@ class FoodNutritionResponse(BaseModel):
     volume: str
     volume_list: list
 
-class ScanFoodRequest(BaseModel):
-    image_url: Optional[str] = None
-    image_path: Optional[str] = None
-
 @app.get("/")
 def index():
     return {"message": "Hayo Cari Apaaa?"}
 
 @app.post("/scan_food")
 async def scan_food(
-    data: ScanFoodRequest = Body(...)
+    image: UploadFile = File(...)
 ):
     """
     Scan food image and detect food type with nutrition data
     
     Parameters:
-        - image: URL to an image 
+        - image: Multipart form-data file field named 'image'
         
     Returns:
         - Detected food type (or "gambar tidak dikenali" if confidence < 0.75)
@@ -80,13 +76,14 @@ async def scan_food(
           Gudeg, Nasi Goreng, Pempek, Rawon, Rendang, Sate Ayam, Soto Ayam
     """
     try:
-        if not data.image_url and not data.image_path:
-            raise HTTPException(status_code=400, detail="Image URL or path required.")
-        
-        if data.image_url:
-            image_bytes = get_image_from_url(data.image_url)
-        else:
-            image_bytes = get_image_from_path(data.image_path)
+        if image is None:
+            raise HTTPException(status_code=400, detail="Image file required.")
+
+        # Optionally validate uploaded file type
+        if image.content_type and not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
+
+        image_bytes = await image.read()
 
         image_array = preprocess_image(image_bytes)
         input_tensor = tf.convert_to_tensor(image_array, dtype=tf.float32)
