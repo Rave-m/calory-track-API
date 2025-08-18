@@ -134,18 +134,21 @@ async def scan_food(
                     }
                     volume_list.append({
                         "nutrition_info": p_nut,
+                        "porsi": p.get("porsi", p.get("text", "")),
                         "volume": p.get("volume", p.get("text", ""))
                     })
                 # Ensure 100 gram present (use base nutrition_data if missing)
                 if not any((item.get("porsi","").lower() == "100 gram" or item.get("porsi","").lower() == "100 gr") for item in volume_list):
                     volume_list.insert(0, {
                         "nutrition_info": nutrition_info,
+                        "porsi": "100 gram",
                         "volume": volume_info if volume_info else "100 gram"
                     })
             except Exception:
                 # fallback to single 100 gram entry using base nutrition
                 volume_list = [{
                     "nutrition_info": nutrition_info,
+                    "porsi": "100 gram",
                     "volume": volume_info if volume_info else "100 gram"
                 }]
         else:
@@ -174,137 +177,189 @@ async def scan_food(
 @app.post("/food_nutrition", response_model=FoodNutritionResponse)
 def food_nutrition(data: FoodNutritionRequest):
     """
-    Get nutrition information for a food item with optional volume
-    
-    Parameters:
-        - name: Food name
-    Returns:
-        - food_name: Name of the food (or "makanan tidak terdaftar" if not found)
-        - nutrition_info: Object containing nutrition values
-        - volume: Volume used for calculation
-        - volume_list: List of all available volume options
+    Get nutrition information for a food item.
+    Behaviour:
+      - If food found: return same structure as /scan_food (nutrition_info + volume_list objects).
+      - If no specific volume provided: 'volume' will be the top (first) item from volume_list.
+      - If food not found: return "makanan tidak terdaftar" response.
     """
     food_name = data.name
-    
+
     if not food_name:
         raise HTTPException(status_code=400, detail="'name' must be provided.")
-    
+
+    not_registered_resp = {
+        "food_name": "makanan tidak terdaftar",
+        "nutrition_info": {
+            "Kalori": "0 kcal",
+            "Lemak": "0 g",
+            "Karbohidrat": "0 g",
+            "Protein": "0 g"
+        },
+        "volume": "unknown",
+        "volume_list": []
+    }
+
     try:
-        # Use scrape_nutrition_data for standard portions
-        nutrition_data, volume = scrape_nutrition_data(food_name)
-        
-        # Check if nutrition data is empty or contains no valid nutritional information
-        if not nutrition_data or all(nutrition_data.get(key, "0") == "0" for key in ["Kalori", "Lemak", "Karbohidrat", "Protein"]):
-            return {
-                "food_name": "makanan tidak terdaftar",
-                "nutrition_info": {
-                    "Kalori": "0 kcal",
-                    "Lemak": "0 g",
-                    "Karbohidrat": "0 g",
-                    "Protein": "0 g"
-                },
-                "volume": "unknown",
-                "volume_list": []
-            }
-        
-        # example output: nutrition_data={'Kalori': '260 kcal', 'Lemak': '14.55 g', 'Karbohidrat': '10.76 g', 'Protein': '21.93 g'}, volume='100 gram(g)'
-        
-        # Map the keys to the expected output format
-        nutrition_info = {
-            "Kalori" : nutrition_data.get("Kalori", "0 kcal"),
+        nutrition_data, base_volume = scrape_nutrition_data(food_name)
+
+        # treat as not-registered if scraping returned empty/zero data
+        if not nutrition_data or all(nutrition_data.get(k, "0") == "0" for k in ["Kalori", "Lemak", "Karbohidrat", "Protein"]):
+            return not_registered_resp
+
+        base_nut = {
+            "Kalori": nutrition_data.get("Kalori", "0 kcal"),
             "Lemak": nutrition_data.get("Lemak", "0 g"),
             "Karbohidrat": nutrition_data.get("Karbohidrat", "0 g"),
-            "Protein": nutrition_data.get("Protein", "0 g")
+            "Protein": nutrition_data.get("Protein", "0 g"),
         }
-        
-        # Get all available volume options
+
+        # build volume_list where each entry contains nutrition_info
         try:
-            portion_links = scrape_portion_links(food_name)
-            volume_list = [portion["text"] for portion in portion_links]
-            # Ensure "100 gram" is always included if not present
-            if "100 gram" not in volume_list:
-                volume_list.insert(0, "100 gram")
+            portions = scrape_portion_nutrition(food_name) or []
+            volume_list = []
+            for p in portions:
+                p_nut = {
+                    "Kalori": p.get("Kalori", "0 kcal"),
+                    "Lemak": p.get("Lemak", "0 g"),
+                    "Karbohidrat": p.get("Karbohidrat", "0 g"),
+                    "Protein": p.get("Protein", "0 g"),
+                }
+                volume_list.append({
+                    "nutrition_info": p_nut,
+                    "porsi": p.get("porsi", p.get("text", "")),
+                    "volume": p.get("volume", p.get("text", ""))
+                })
+
+            # ensure 100 gram present at top as fallback
+            if not any((item.get("porsi","").lower() in ("100 gram","100 gr")) for item in volume_list):
+                volume_list.insert(0, {
+                    "nutrition_info": base_nut,
+                    "porsi": "100 gram",
+                    "volume": base_volume if base_volume else "100 gram"
+                })
         except Exception:
-            volume_list = ["100 gram"]  # Default fallback
-    
+            volume_list = [{
+                "nutrition_info": base_nut,
+                "porsi": "100 gram",
+                "volume": base_volume if base_volume else "100 gram"
+            }]
+
+        # choose top-most volume as the selected volume
+        selected_volume = volume_list[0]["volume"] if volume_list else (base_volume if base_volume else "unknown")
+
         return {
             "food_name": food_name,
-            "nutrition_info": nutrition_info,
-            "volume": volume,
+            "nutrition_info": base_nut,
+            "volume": selected_volume,
             "volume_list": volume_list
         }
-    
-    except Exception as e:
-        # If there's an error in scraping, treat it as food not found
-        return {
-            "food_name": "makanan tidak terdaftar",
-            "nutrition_info": {
-                "Kalori": "0 kcal",
-                "Lemak": "0 g",
-                "Karbohidrat": "0 g",
-                "Protein": "0 g"
-            },
-            "volume": "unknown",
-            "volume_list": []
-        }
+
+    except Exception:
+        return not_registered_resp
 
 # Add a new endpoint to get all available portion options
 @app.post("/food_portions")
 def food_portions(data: FoodNutritionRequest):
     """
-    Get all available portion options and nutrition for a food
-    
-    Parameters:
-        - name: Food name
-        - volume: Optional specific portion to get (e.g., "100 gram", "1 porsi", "1 mangkok")
-    
-    Returns:
-        - If volume specified: Single nutrition object for that portion
-        - If volume not specified: Array of all available portions with nutrition
-        - If food not found: Empty array or error message
+    Return response matching /scan_food structure for a given food name.
+    If 'volume' provided, return nutrition for that portion only.
+    Otherwise return base nutrition and volume_list (each entry contains nutrition_info).
     """
     food_name = data.name
-    volume = data.volume
-    
+    req_volume = data.volume
+
     if not food_name:
         raise HTTPException(status_code=400, detail="'name' must be provided.")
-    
+
+    # default not-registered response
+    not_registered_resp = {
+        "food_name": "makanan tidak terdaftar",
+        "confidence": 0.0,
+        "nutrition_info": {
+            "Kalori": "0 kcal",
+            "Lemak": "0 g",
+            "Karbohidrat": "0 g",
+            "Protein": "0 g"
+        },
+        "volume": "unknown",
+        "volume_list": [],
+        "message": "Model ini hanya dapat mengenali 10 jenis makanan Indonesia: " + ", ".join(food_list)
+    }
+
     try:
-        # Get all portion nutrition data
-        all_portions = scrape_portion_nutrition(food_name)
-        
-        # Check if no portions were found (food not registered)
-        if not all_portions:
-            return {
-                "food_name": "makanan tidak terdaftar",
-                "message": "Makanan tidak ditemukan dalam database",
-                "available_portions": []
-            }
-        
-        # If specific portion requested, filter and return only that portion
-        if volume:
-            filtered_portions = [
-                portion for portion in all_portions 
-                if portion.get("porsi", "").lower() == volume.lower()
-            ]
-            
-            if not filtered_portions:
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Portion '{volume}' not found for food '{food_name}'. Available portions: {[p.get('porsi') for p in all_portions]}"
-                )
-            
-            return filtered_portions[0]  # Return single object
-        
-        # If no specific portion requested, return all available portions
-        return all_portions
-        
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions
-    except Exception as e:
-        # If there's an error in scraping, treat it as food not found
-        return {
-            "food_name": "makanan tidak terdaftar",
-            "message": "Makanan tidak ditemukan dalam database",
-            "available_portions": []
+        # base nutrition (usually 100 gram) and base volume string
+        nutrition_data, base_volume = scrape_nutrition_data(food_name)
+
+        if not nutrition_data or all(nutrition_data.get(k, "0") == "0" for k in ["Kalori", "Lemak", "Karbohidrat", "Protein"]):
+            return not_registered_resp
+
+        base_nut = {
+            "Kalori": nutrition_data.get("Kalori", "0 kcal"),
+            "Lemak": nutrition_data.get("Lemak", "0 g"),
+            "Karbohidrat": nutrition_data.get("Karbohidrat", "0 g"),
+            "Protein": nutrition_data.get("Protein", "0 g"),
         }
+
+        # build detailed volume_list (each entry includes nutrition_info)
+        try:
+            portions = scrape_portion_nutrition(food_name) or []
+            volume_list = []
+            for p in portions:
+                p_nut = {
+                    "Kalori": p.get("Kalori", "0 kcal"),
+                    "Lemak": p.get("Lemak", "0 g"),
+                    "Karbohidrat": p.get("Karbohidrat", "0 g"),
+                    "Protein": p.get("Protein", "0 g"),
+                }
+                volume_list.append({
+                    "nutrition_info": p_nut,
+                    "porsi": p.get("porsi", p.get("text", "")),
+                    "volume": p.get("volume", p.get("text", ""))
+                })
+
+            # ensure 100 gram present
+            if not any((item.get("porsi","").lower() in ("100 gram","100 gr")) for item in volume_list):
+                volume_list.insert(0, {
+                    "nutrition_info": base_nut,
+                    "porsi": "100 gram",
+                    "volume": base_volume if base_volume else "100 gram"
+                })
+        except Exception:
+            volume_list = [{
+                "nutrition_info": base_nut,
+                "porsi": "100 gram",
+                "volume": base_volume if base_volume else "100 gram"
+            }]
+
+        # If specific volume requested, return that portion (with full volume_list)
+        if req_volume:
+            matched = None
+            for item in volume_list:
+                if item.get("porsi","").strip().lower() == req_volume.strip().lower():
+                    matched = item
+                    break
+            if not matched:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Portion '{req_volume}' not found for '{food_name}'. Available: {[i.get('porsi') for i in volume_list]}"
+                )
+            return {
+                "food_name": food_name,
+                "confidence": 1.0,
+                "nutrition_info": matched["nutrition_info"],
+                "volume": matched["volume"],
+                "volume_list": volume_list
+            }
+
+        # default (no specific volume) -> return base nutrition + full volume_list
+        return {
+            "food_name": food_name,
+            "confidence": 1.0,
+            "nutrition_info": base_nut,
+            "volume": base_volume if base_volume else "100 gram",
+            "volume_list": volume_list
+        }
+
+    except Exception:
+        return not_registered_resp
