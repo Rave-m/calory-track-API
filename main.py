@@ -63,23 +63,11 @@ async def scan_food(
     
     Parameters:
         - image: Multipart form-data file field named 'image'
-        
-    Returns:
-        - Detected food type (or "gambar tidak dikenali" if confidence < 0.75)
-        - Confidence score
-        - Nutrition data of the detected food
-        - Available volume options
-        - Message explaining model limitations (if applicable)
-        - Detected food name (if not in database)
-        
-    Note: Model can only recognize 10 Indonesian food types: Bakso Daging Sapi, Bebek Betutu, Gado-Gado, 
-          Gudeg, Nasi Goreng, Pempek, Rawon, Rendang, Sate Ayam, Soto Ayam
     """
     try:
         if image is None:
             raise HTTPException(status_code=400, detail="Image file required.")
 
-        # Optionally validate uploaded file type
         if image.content_type and not image.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
 
@@ -94,7 +82,7 @@ async def scan_food(
         pred_idx = np.argmax(prediction)
         confidence = float(prediction[0][pred_idx])
         
-        # Check confidence threshold
+        # Low confidence -> unknown image
         if confidence < 0.75:
             return {
                 "food_name": "gambar tidak dikenali",
@@ -107,50 +95,79 @@ async def scan_food(
                 },
                 "volume": "unknown",
                 "volume_list": [],
-                "message": "Model ini hanya dapat mengenali 10 jenis makanan Indonesia: Bakso Daging Sapi, Bebek Betutu, Gado-Gado, Gudeg, Nasi Goreng, Pempek, Rawon, Rendang, Sate Ayam, Soto Ayam",
-
+                "message": "Model ini hanya dapat mengenali 10 jenis makanan Indonesia: " + ", ".join(food_list)
             }
         
-        food_name = food_list[pred_idx] if pred_idx < len(food_list) else "unknown"        
+        detected_food = food_list[pred_idx] if pred_idx < len(food_list) else "unknown"
+        
+        # Try to get base nutrition and default volume info (usually 100 gram)
         try:
-            # Unpacking tuple return value properly
-            nutrition_data, volume_info = scrape_nutrition_data(food_name)
-            
-            
+            nutrition_data, volume_info = scrape_nutrition_data(detected_food)
             nutrition_info = {
                 "Kalori": nutrition_data.get("Kalori", "0 kcal"),
                 "Lemak": nutrition_data.get("Lemak", "0 g"),
                 "Karbohidrat": nutrition_data.get("Karbohidrat", "0 g"),
                 "Protein": nutrition_data.get("Protein", "0 g"),
             }
+            food_registered = True
         except Exception:
-            # Handle case when detected food is not in database
             nutrition_info = {
                 "Kalori": "0 kcal",
                 "Lemak": "0 g",
                 "Karbohidrat": "0 g",
                 "Protein": "0 g",
             }
-            
-        # Get all available volume options
-        try:
-            portion_links = scrape_portion_links(food_name)
-            volume_list = [portion["text"] for portion in portion_links]
-            # Ensure "100 gram" is always included if not present
-            if "100 gram" not in volume_list:
-                volume_list.insert(0, "100 gram")
-        except Exception:
-            volume_list = ["100 gram"]  # Default fallback
-            
-        # Return prediction and nutrition info
-        return {
-            "food_name": food_name,
+            food_registered = False
+            volume_info = "unknown"
+        
+        # Build volume_list as objects containing nutrition_info per portion
+        volume_list = []
+        if food_registered:
+            try:
+                portions = scrape_portion_nutrition(detected_food) or []
+                for p in portions:
+                    p_nut = {
+                        "Kalori": p.get("Kalori", "0 kcal"),
+                        "Lemak": p.get("Lemak", "0 g"),
+                        "Karbohidrat": p.get("Karbohidrat", "0 g"),
+                        "Protein": p.get("Protein", "0 g"),
+                    }
+                    volume_list.append({
+                        "nutrition_info": p_nut,
+                        "volume": p.get("volume", p.get("text", ""))
+                    })
+                # Ensure 100 gram present (use base nutrition_data if missing)
+                if not any((item.get("porsi","").lower() == "100 gram" or item.get("porsi","").lower() == "100 gr") for item in volume_list):
+                    volume_list.insert(0, {
+                        "nutrition_info": nutrition_info,
+                        "volume": volume_info if volume_info else "100 gram"
+                    })
+            except Exception:
+                # fallback to single 100 gram entry using base nutrition
+                volume_list = [{
+                    "nutrition_info": nutrition_info,
+                    "volume": volume_info if volume_info else "100 gram"
+                }]
+        else:
+            # not registered -> empty list
+            volume_list = []
+
+        response = {
+            "food_name": detected_food if food_registered else "makanan tidak terdaftar",
             "confidence": round(float(confidence), 2),
             "nutrition_info": nutrition_info,
-            "volume": volume_info if 'volume_info' in locals() else "unknown",
+            "volume": volume_info if food_registered else "unknown",
             "volume_list": volume_list
         }
-    
+
+        if not food_registered:
+            response["message"] = (
+                f"Makanan terdeteksi: '{detected_food}' tetapi tidak ada di database. "
+                "Model hanya dapat mengenali: " + ", ".join(food_list)
+            )
+
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
