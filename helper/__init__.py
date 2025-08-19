@@ -10,6 +10,7 @@ from .scrap import (
     scrape_nutrition_data,
     scrape_portion_links,
     scrape_portion_nutrition,
+    scrape_search_list
 )
 
 # Import and expose data from food.py
@@ -30,7 +31,8 @@ __all__ = [
     'scrape_nutrition_data',
     'scrape_portion_links',
     'scrape_portion_nutrition',
-    
+    'scrape_search_list',
+
     # Food data
     'food_list',
     

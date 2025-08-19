@@ -1,5 +1,5 @@
 import tensorflow as tf
-from fastapi import FastAPI, HTTPException, Body, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -8,9 +8,7 @@ import numpy as np
 from helper import (
     scrape_nutrition_data,
     scrape_portion_nutrition,
-    scrape_portion_links,
-    get_image_from_path,
-    get_image_from_url,
+    scrape_search_list,
     preprocess_image,
     food_list
 )
@@ -134,21 +132,19 @@ async def scan_food(
                     }
                     volume_list.append({
                         "nutrition_info": p_nut,
-                        "porsi": p.get("porsi", p.get("text", "")),
                         "volume": p.get("volume", p.get("text", ""))
                     })
+                    
                 # Ensure 100 gram present (use base nutrition_data if missing)
-                if not any((item.get("porsi","").lower() == "100 gram" or item.get("porsi","").lower() == "100 gr") for item in volume_list):
+                if not any(("100 gram" in item.get("volume","").lower() or "100 gr" in item.get("volume","").lower()) for item in volume_list):
                     volume_list.insert(0, {
                         "nutrition_info": nutrition_info,
-                        "porsi": "100 gram",
                         "volume": volume_info if volume_info else "100 gram"
                     })
             except Exception:
                 # fallback to single 100 gram entry using base nutrition
                 volume_list = [{
                     "nutrition_info": nutrition_info,
-                    "porsi": "100 gram",
                     "volume": volume_info if volume_info else "100 gram"
                 }]
         else:
@@ -227,21 +223,19 @@ def food_nutrition(data: FoodNutritionRequest):
                 }
                 volume_list.append({
                     "nutrition_info": p_nut,
-                    "porsi": p.get("porsi", p.get("text", "")),
                     "volume": p.get("volume", p.get("text", ""))
                 })
 
             # ensure 100 gram present at top as fallback
-            if not any((item.get("porsi","").lower() in ("100 gram","100 gr")) for item in volume_list):
+            if not any(("100 gram" in item.get("volume","").lower() or "100 gr" in item.get("volume","").lower()) for item in volume_list):
                 volume_list.insert(0, {
                     "nutrition_info": base_nut,
-                    "porsi": "100 gram",
                     "volume": base_volume if base_volume else "100 gram"
                 })
+                
         except Exception:
             volume_list = [{
                 "nutrition_info": base_nut,
-                "porsi": "100 gram",
                 "volume": base_volume if base_volume else "100 gram"
             }]
 
@@ -257,3 +251,16 @@ def food_nutrition(data: FoodNutritionRequest):
 
     except Exception:
         return not_registered_resp
+    
+@app.get("/food_search")
+def search_food(query: Optional[str] = None):
+    """
+    Search food by query string (GET /food_search?query=...)
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="'query' parameter is required.")
+    try:
+        results = scrape_search_list(query.strip())
+        return {"query": query.strip(), "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching for '{query}': {str(e)}")
