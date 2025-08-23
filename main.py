@@ -13,14 +13,12 @@ from helper import (
     food_list
 )
 
-# # Load the saved model
+# Load the saved model
 model_path = "model"
 model = tf.saved_model.load(model_path)
 infer = model.signatures["serving_default"]
 
-app = FastAPI(title="Calorie Track API", 
-              description="API for tracking nutrition and calories in Indonesian food",
-              version="1.0.0")
+app = FastAPI()
 
 # Configure CORS
 app.add_middleware(
@@ -47,11 +45,7 @@ class FoodNutritionResponse(BaseModel):
     nutrition_info: NutritionInfo
     volume: str
     volume_list: list
-
-@app.get("/")
-def index():
-    return {"message": "Hayo Cari Apaaa?"}
-
+    
 @app.post("/scan_food")
 async def scan_food(
     image: UploadFile = File(...)
@@ -171,7 +165,7 @@ async def scan_food(
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
 @app.post("/food_nutrition", response_model=FoodNutritionResponse)
-def food_nutrition(data: FoodNutritionRequest):
+async def food_nutrition(data: FoodNutritionRequest):
     """
     Get nutrition information for a food item.
     Behaviour:
@@ -253,7 +247,7 @@ def food_nutrition(data: FoodNutritionRequest):
         return not_registered_resp
     
 @app.get("/food_search")
-def search_food(query: Optional[str] = None):
+async def search_food(query: Optional[str] = None):
     """
     Search food by query string (GET /food_search?query=...)
     """

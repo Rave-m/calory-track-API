@@ -18,10 +18,6 @@ from .food import food_list
 
 # Import and expose utility functions
 from .functions import (
-    convert_weight_to_grams,
-    safe_convert,
-    get_image_from_url,
-    get_image_from_path,
     preprocess_image
 )
 
@@ -37,9 +33,5 @@ __all__ = [
     'food_list',
     
     # Utility functions
-    'convert_weight_to_grams',
-    'safe_convert',
-    'get_image_from_url',
-    'get_image_from_path',
     'preprocess_image'
 ]

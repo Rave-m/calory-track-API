@@ -117,18 +117,15 @@ def scrape_portion_nutrition(food_name):
     
     portion_nutrition = []
     for portion in portion_links:
-        portion_text = portion["text"]
         portion_url = portion["url"]
         nutrition_data, volume = scrape_nutrition_data(food_name, portion_url)
         
         # Gabungkan data nutrisi dengan informasi porsi
-        nutrition_data["porsi"] = portion_text
         nutrition_data["volume"] = volume
         portion_nutrition.append(nutrition_data)
         
     return portion_nutrition    
 
-# search
 # search
 def scrape_search_list(query):
     """
